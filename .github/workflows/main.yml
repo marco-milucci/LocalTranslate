@@ -166,31 +166,10 @@ jobs:
                   if internal_dir.exists():
                       shutil.copy2(src, internal_dir / dll)
 
-          # 6. Crea script batch di avvio con controllo integrità
-          bat_content = '''@echo off
-title LocalTranslate - Traduttore Offline
-cd /d "%~dp0"
-
-if not exist "_internal\\python311.dll" if not exist "python311.dll" (
-    echo.
-    echo ======================================================================
-    echo  ERRORE: I file dell'applicazione non sono stati estratti completamente!
-    echo  Non eseguire il programma da dentro l'archivio ZIP.
-    echo.
-    echo  Istruzioni:
-    echo  1. Fai clic destro sul file ZIP scaricato
-    echo  2. Seleziona "Estrai tutto..."
-    echo  3. Apri la cartella estratta ed esegui nuovamente questo file.
-    echo ======================================================================
-    echo.
-    pause
-    exit /b 1
-)
-
-start "" "%~dp0LocalTranslate.exe"
-'''
-          with open(portable_dir / "AVVIA-LOCALTRANSLATE.bat", "w", encoding="utf-8") as f:
-              f.write(bat_content)
+          # 6. Crea script batch di avvio
+          bat_file = portable_dir / "AVVIA-LOCALTRANSLATE.bat"
+          with open(bat_file, "w", encoding="utf-8") as f:
+              f.write("@echo off\ncd /d \"%~dp0\"\nstart \"\" \"%~dp0LocalTranslate.exe\"\n")
 
           print("Assemblaggio cartella portabile completato con successo!")
 
