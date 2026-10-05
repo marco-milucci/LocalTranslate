@@ -15,52 +15,44 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Extract Project Zip (if uploaded as archive)
+      - name: Unpack Project Zip
         shell: pwsh
         run: |
-          Write-Host "Verifica struttura cartelle nel repository..."
           if (Test-Path "LocalTranslate.zip") {
-              Write-Host "LocalTranslate.zip rilevato. Estrazione automatica in corso..."
-              Expand-Archive -Path "LocalTranslate.zip" -DestinationPath "temp_extract" -Force
-              if (Test-Path "temp_extract\LocalTranslate") {
-                  Write-Host "Spostamento file da temp_extract\LocalTranslate alla radice..."
-                  Copy-Item -Recurse -Force "temp_extract\LocalTranslate\*" "."
-              } else {
-                  Copy-Item -Recurse -Force "temp_extract\*" "."
+              Write-Host "Estrazione di LocalTranslate.zip in corso..."
+              Expand-Archive -Path "LocalTranslate.zip" -DestinationPath "." -Force
+              if (Test-Path "LocalTranslate\backend") {
+                  Copy-Item -Recurse -Force "LocalTranslate\*" "."
               }
-              Remove-Item -Recurse -Force "temp_extract"
-              Write-Host "Estrazione completata con successo."
           }
-          Write-Host "File presenti nella directory di lavoro:"
-          Get-ChildItem
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies & Conversion Tools
+      - name: Install Dependencies
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          python -m pip install -r requirements.txt
-          python -m pip install pyinstaller
-          # PyTorch CPU è necessario per convertire i pesi Hugging Face in CTranslate2 INT8
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
-      - name: Download & Convert NLLB-200 INT8 Model
+      - name: Download & Convert Model
         shell: pwsh
         run: |
-          Write-Host "Download e quantizzazione INT8 del modello NLLB-200 (600M)..."
           python -m backend.scripts.download_and_convert
 
-      - name: Build Standalone Portable Windows Package
+      - name: Build Executable Package
         shell: pwsh
         run: |
-          Write-Host "Compilazione nativa con PyInstaller e bundling di estensione, modelli e asset..."
           powershell.exe -ExecutionPolicy Bypass -File .\windows\build.ps1 -Clean -IncludeModel
+          if (Test-Path "dist\LocalTranslate-Portable\_internal\backend") {
+              Copy-Item -Recurse -Force "backend\models" "dist\LocalTranslate-Portable\_internal\backend\models"
+              Compress-Archive -Path "dist\LocalTranslate-Portable\*" -DestinationPath "dist\LocalTranslate-Portable-Windows.zip" -Force
+          }
 
-      - name: Upload Portable Zip Artifact
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: LocalTranslate-Portable-Windows
