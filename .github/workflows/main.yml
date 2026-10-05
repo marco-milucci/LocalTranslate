@@ -139,15 +139,64 @@ jobs:
               if internal_backend.exists():
                   shutil.copytree(models_src, internal_backend / "models", dirs_exist_ok=True)
 
-          print("=== Creazione archivio ZIP finale ===")
-          zip_base = str(dist_dir / "LocalTranslate-Portable-Windows")
-          shutil.make_archive(zip_base, "zip", str(portable_dir))
-          final_zip = dist_dir / "LocalTranslate-Portable-Windows.zip"
-          print(f"Pacchetto ZIP completato con successo: {final_zip} (dimensione: {final_zip.stat().st_size} bytes)")
+          # 5. Raccogli e includi tutte le DLL di runtime C/C++ e Python per Windows
+          print("Inclusione DLL di sistema e runtime C++...")
+          py_base = pathlib.Path(sys.base_prefix)
+          sys32 = pathlib.Path("C:/Windows/System32")
+          critical_dlls = [
+              "python311.dll",
+              "vcruntime140.dll",
+              "vcruntime140_1.dll",
+              "msvcp140.dll",
+              "msvcp140_1.dll",
+              "msvcp140_2.dll",
+              "msvcp140_codecvt_ids.dll",
+              "vcomp140.dll",
+          ]
+          for dll in critical_dlls:
+              src = None
+              if (py_base / dll).exists():
+                  src = py_base / dll
+              elif (sys32 / dll).exists():
+                  src = sys32 / dll
+              if src:
+                  print(f"Copia {dll} da {src}...")
+                  shutil.copy2(src, portable_dir / dll)
+                  internal_dir = portable_dir / "_internal"
+                  if internal_dir.exists():
+                      shutil.copy2(src, internal_dir / dll)
+
+          # 6. Crea script batch di avvio con controllo integrità
+          bat_content = '''@echo off
+title LocalTranslate - Traduttore Offline
+cd /d "%~dp0"
+
+if not exist "_internal\\python311.dll" if not exist "python311.dll" (
+    echo.
+    echo ======================================================================
+    echo  ERRORE: I file dell'applicazione non sono stati estratti completamente!
+    echo  Non eseguire il programma da dentro l'archivio ZIP.
+    echo.
+    echo  Istruzioni:
+    echo  1. Fai clic destro sul file ZIP scaricato
+    echo  2. Seleziona "Estrai tutto..."
+    echo  3. Apri la cartella estratta ed esegui nuovamente questo file.
+    echo ======================================================================
+    echo.
+    pause
+    exit /b 1
+)
+
+start "" "%~dp0LocalTranslate.exe"
+'''
+          with open(portable_dir / "AVVIA-LOCALTRANSLATE.bat", "w", encoding="utf-8") as f:
+              f.write(bat_content)
+
+          print("Assemblaggio cartella portabile completato con successo!")
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: LocalTranslate-Portable-Windows
-          path: dist/LocalTranslate-Portable-Windows.zip
+          path: dist/LocalTranslate-Portable
           retention-days: 30
