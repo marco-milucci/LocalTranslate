@@ -35,7 +35,7 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt pyinstaller
+          python -m pip install -r requirements.txt pyinstaller pillow
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Download & Convert Model
@@ -46,11 +46,34 @@ jobs:
       - name: Build Executable Package
         shell: pwsh
         run: |
-          powershell.exe -ExecutionPolicy Bypass -File .\windows\build.ps1 -Clean -IncludeModel
-          if (Test-Path "dist\LocalTranslate-Portable\_internal\backend") {
-              Copy-Item -Recurse -Force "backend\models" "dist\LocalTranslate-Portable\_internal\backend\models"
-              Compress-Archive -Path "dist\LocalTranslate-Portable\*" -DestinationPath "dist\LocalTranslate-Portable-Windows.zip" -Force
+          Write-Host "Compilazione nativa con PyInstaller..."
+          cd backend
+          python -m PyInstaller localtranslate.spec --distpath "..\dist" --workpath "..\build"
+          cd ..
+
+          Write-Host "Assemblaggio pacchetto portabile..."
+          $PortableDir = "dist\LocalTranslate-Portable"
+          if (Test-Path $PortableDir) { Remove-Item -Recurse -Force $PortableDir }
+          New-Item -ItemType Directory -Path $PortableDir | Out-Null
+
+          Copy-Item -Recurse -Force "dist\LocalTranslate\*" $PortableDir
+          Copy-Item -Recurse -Force "extension" "$PortableDir\extension"
+          if (Test-Path "assets") {
+              Copy-Item -Recurse -Force "assets" "$PortableDir\assets"
           }
+          if (Test-Path "backend\models") {
+              Copy-Item -Recurse -Force "backend\models" "$PortableDir\backend\models"
+              Copy-Item -Recurse -Force "backend\models" "$PortableDir\models"
+              if (Test-Path "$PortableDir\_internal\backend") {
+                  Copy-Item -Recurse -Force "backend\models" "$PortableDir\_internal\backend\models"
+              }
+          }
+
+          Write-Host "Creazione archivio ZIP finale..."
+          $ZipOutput = "dist\LocalTranslate-Portable-Windows.zip"
+          if (Test-Path $ZipOutput) { Remove-Item -Force $ZipOutput }
+          Compress-Archive -Path "$PortableDir\*" -DestinationPath $ZipOutput -CompressionLevel Optimal
+          Write-Host "Pacchetto creato con successo: $ZipOutput"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
