@@ -15,23 +15,49 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      - name: Extract Project Zip (if uploaded as archive)
+        shell: pwsh
+        run: |
+          Write-Host "Verifica struttura cartelle nel repository..."
+          if (Test-Path "LocalTranslate.zip") {
+              Write-Host "LocalTranslate.zip rilevato. Estrazione automatica in corso..."
+              Expand-Archive -Path "LocalTranslate.zip" -DestinationPath "temp_extract" -Force
+              if (Test-Path "temp_extract\LocalTranslate") {
+                  Write-Host "Spostamento file da temp_extract\LocalTranslate alla radice..."
+                  Copy-Item -Recurse -Force "temp_extract\LocalTranslate\*" "."
+              } else {
+                  Copy-Item -Recurse -Force "temp_extract\*" "."
+              }
+              Remove-Item -Recurse -Force "temp_extract"
+              Write-Host "Estrazione completata con successo."
+          }
+          Write-Host "File presenti nella directory di lavoro:"
+          Get-ChildItem
+
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install Dependencies
+      - name: Install Dependencies & Conversion Tools
+        shell: pwsh
         run: |
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install -r requirements.txt
           python -m pip install pyinstaller
+          # PyTorch CPU è necessario per convertire i pesi Hugging Face in CTranslate2 INT8
+          python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Download & Convert NLLB-200 INT8 Model
+        shell: pwsh
         run: |
+          Write-Host "Download e quantizzazione INT8 del modello NLLB-200 (600M)..."
           python -m backend.scripts.download_and_convert
 
       - name: Build Standalone Portable Windows Package
+        shell: pwsh
         run: |
+          Write-Host "Compilazione nativa con PyInstaller e bundling di estensione, modelli e asset..."
           powershell.exe -ExecutionPolicy Bypass -File .\windows\build.ps1 -Clean -IncludeModel
 
       - name: Upload Portable Zip Artifact
@@ -39,3 +65,4 @@ jobs:
         with:
           name: LocalTranslate-Portable-Windows
           path: dist/LocalTranslate-Portable-Windows.zip
+          retention-days: 30
