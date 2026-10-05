@@ -43,37 +43,107 @@ jobs:
         run: |
           python -m backend.scripts.download_and_convert
 
-      - name: Build Executable Package
-        shell: pwsh
+      - name: Build Standalone Executable
+        shell: python
         run: |
-          Write-Host "Compilazione nativa con PyInstaller..."
-          cd backend
-          python -m PyInstaller localtranslate.spec --distpath "..\dist" --workpath "..\build"
-          cd ..
+          import os
+          import sys
+          import shutil
+          import pathlib
+          import PyInstaller.__main__
 
-          Write-Host "Assemblaggio pacchetto portabile..."
-          $PortableDir = "dist\LocalTranslate-Portable"
-          if (Test-Path $PortableDir) { Remove-Item -Recurse -Force $PortableDir }
-          New-Item -ItemType Directory -Path $PortableDir | Out-Null
+          print("=== Inizio compilazione PyInstaller ===")
+          root_dir = pathlib.Path(".").resolve()
+          backend_dir = root_dir / "backend"
+          dist_dir = root_dir / "dist"
+          build_dir = root_dir / "build"
+          portable_dir = dist_dir / "LocalTranslate-Portable"
 
-          Copy-Item -Recurse -Force "dist\LocalTranslate\*" $PortableDir
-          Copy-Item -Recurse -Force "extension" "$PortableDir\extension"
-          if (Test-Path "assets") {
-              Copy-Item -Recurse -Force "assets" "$PortableDir\assets"
-          }
-          if (Test-Path "backend\models") {
-              Copy-Item -Recurse -Force "backend\models" "$PortableDir\backend\models"
-              Copy-Item -Recurse -Force "backend\models" "$PortableDir\models"
-              if (Test-Path "$PortableDir\_internal\backend") {
-                  Copy-Item -Recurse -Force "backend\models" "$PortableDir\_internal\backend\models"
-              }
-          }
+          icon_path = root_dir / "assets" / "LocalTranslate.ico"
+          icon_args = [f"--icon={icon_path}"] if icon_path.exists() else []
 
-          Write-Host "Creazione archivio ZIP finale..."
-          $ZipOutput = "dist\LocalTranslate-Portable-Windows.zip"
-          if (Test-Path $ZipOutput) { Remove-Item -Force $ZipOutput }
-          Compress-Archive -Path "$PortableDir\*" -DestinationPath $ZipOutput -CompressionLevel Optimal
-          Write-Host "Pacchetto creato con successo: $ZipOutput"
+          pyinstaller_args = [
+              "--name=LocalTranslate",
+              "--onedir",
+              "--noconsole",
+              *icon_args,
+              "--collect-all=ctranslate2",
+              "--collect-all=transformers",
+              "--collect-all=sentencepiece",
+              "--collect-all=pystray",
+              "--copy-metadata=ctranslate2",
+              "--copy-metadata=transformers",
+              "--copy-metadata=sentencepiece",
+              "--hidden-import=uvicorn.logging",
+              "--hidden-import=uvicorn.loops",
+              "--hidden-import=uvicorn.loops.auto",
+              "--hidden-import=uvicorn.protocols",
+              "--hidden-import=uvicorn.protocols.http",
+              "--hidden-import=uvicorn.protocols.http.auto",
+              "--hidden-import=uvicorn.protocols.websockets",
+              "--hidden-import=uvicorn.protocols.websockets.auto",
+              "--hidden-import=uvicorn.lifespans",
+              "--hidden-import=uvicorn.lifespans.on",
+              "--hidden-import=pystray._win32",
+              "--hidden-import=PIL",
+              "--hidden-import=PIL.Image",
+              "--exclude-module=torch",
+              "--exclude-module=torchvision",
+              "--exclude-module=torchaudio",
+              "--exclude-module=matplotlib",
+              "--exclude-module=scipy",
+              f"--paths={root_dir}",
+              f"--paths={backend_dir}",
+              f"--distpath={dist_dir}",
+              f"--workpath={build_dir}",
+              str(backend_dir / "app" / "desktop" / "app_launcher.py"),
+          ]
+
+          print("Esecuzione PyInstaller...")
+          PyInstaller.__main__.run(pyinstaller_args)
+
+          output_exe_dir = dist_dir / "LocalTranslate"
+          if not output_exe_dir.exists():
+              raise RuntimeError(f"Cartella di output PyInstaller non trovata: {output_exe_dir}")
+
+          print("=== Assemblaggio cartella portabile ===")
+          if portable_dir.exists():
+              shutil.rmtree(portable_dir)
+          portable_dir.mkdir(parents=True, exist_ok=True)
+
+          # 1. Copia i binari compilati
+          for item in output_exe_dir.iterdir():
+              dest = portable_dir / item.name
+              if item.is_dir():
+                  shutil.copytree(item, dest, dirs_exist_ok=True)
+              else:
+                  shutil.copy2(item, dest)
+
+          # 2. Copia estensione browser
+          ext_src = root_dir / "extension"
+          if ext_src.exists():
+              shutil.copytree(ext_src, portable_dir / "extension", dirs_exist_ok=True)
+
+          # 3. Copia assets
+          assets_src = root_dir / "assets"
+          if assets_src.exists():
+              shutil.copytree(assets_src, portable_dir / "assets", dirs_exist_ok=True)
+
+          # 4. Copia modello int8 convertito
+          models_src = backend_dir / "models"
+          if models_src.exists():
+              print("Integrazione modello INT8 nel pacchetto portabile...")
+              shutil.copytree(models_src, portable_dir / "backend" / "models", dirs_exist_ok=True)
+              shutil.copytree(models_src, portable_dir / "models", dirs_exist_ok=True)
+              internal_backend = portable_dir / "_internal" / "backend"
+              if internal_backend.exists():
+                  shutil.copytree(models_src, internal_backend / "models", dirs_exist_ok=True)
+
+          print("=== Creazione archivio ZIP finale ===")
+          zip_base = str(dist_dir / "LocalTranslate-Portable-Windows")
+          shutil.make_archive(zip_base, "zip", str(portable_dir))
+          final_zip = dist_dir / "LocalTranslate-Portable-Windows.zip"
+          print(f"Pacchetto ZIP completato con successo: {final_zip} (dimensione: {final_zip.stat().st_size} bytes)")
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
