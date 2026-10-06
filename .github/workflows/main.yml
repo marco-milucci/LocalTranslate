@@ -128,20 +128,42 @@ jobs:
           if ext_src.exists():
               shutil.copytree(ext_src, portable_dir / "extension", dirs_exist_ok=True)
 
-          # 3. Copia assets
+          # 3. Copia assets e istruzioni
           assets_src = root_dir / "assets"
           if assets_src.exists():
               shutil.copytree(assets_src, portable_dir / "assets", dirs_exist_ok=True)
+          inst_src = root_dir / "ISTRUZIONI.txt"
+          if inst_src.exists():
+              shutil.copy2(inst_src, portable_dir / "ISTRUZIONI.txt")
 
-          # 4. Copia modello int8 convertito in tutte le posizioni possibili
-          models_src = backend_dir / "models"
-          if models_src.exists():
-              print("Integrazione modello INT8 nel pacchetto portabile...")
-              shutil.copytree(models_src, portable_dir / "backend" / "models", dirs_exist_ok=True)
-              shutil.copytree(models_src, portable_dir / "models", dirs_exist_ok=True)
-              internal_backend = portable_dir / "_internal" / "backend"
-              if internal_backend.exists():
-                  shutil.copytree(models_src, internal_backend / "models", dirs_exist_ok=True)
+          # 4. Copia modello int8 convertito ovunque si trovi
+          models_candidates = [
+              root_dir / "models",
+              backend_dir / "models",
+          ]
+          found_model_dir = None
+          for cand in models_candidates:
+              if (cand / "nllb-200-distilled-600M-int8" / "model.bin").exists() or (cand / "model.bin").exists():
+                  found_model_dir = cand
+                  break
+
+          if not found_model_dir:
+              try:
+                  for p in root_dir.glob("**/model.bin"):
+                      if p.parent.name == "nllb-200-distilled-600M-int8":
+                          found_model_dir = p.parent.parent
+                      else:
+                          found_model_dir = p.parent
+                      break
+              except Exception:
+                  pass
+
+          if found_model_dir and found_model_dir.exists():
+              print(f"Integrazione modello INT8 da {found_model_dir} nel pacchetto portabile...")
+              shutil.copytree(found_model_dir, portable_dir / "models", dirs_exist_ok=True)
+              shutil.copytree(found_model_dir, portable_dir / "backend" / "models", dirs_exist_ok=True)
+          else:
+              print("ATTENZIONE: Modello non trovato durante la copia finale!")
 
           # 5. Raccogli e includi tutte le DLL di runtime C/C++ e Python per Windows
           print("Inclusione DLL di sistema e runtime C++...")
@@ -176,6 +198,7 @@ jobs:
               f.write("@echo off\n")
               f.write("cd /d \"%~dp0\"\n")
               f.write("set LOCALTRANSLATE_MODEL_PATH=%~dp0models\\nllb-200-distilled-600M-int8\n")
+              f.write("set LOCALTRANSLATE_DEVICE=cpu\n")
               f.write("start \"\" \"%~dp0LocalTranslate.exe\"\n")
 
           print("Assemblaggio cartella portabile completato con successo!")
