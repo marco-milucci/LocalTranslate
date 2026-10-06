@@ -71,6 +71,8 @@ jobs:
               "--collect-all=transformers",
               "--collect-all=sentencepiece",
               "--collect-all=pystray",
+              "--collect-all=tkinter",
+              "--collect-all=_tkinter",
               "--copy-metadata=ctranslate2",
               "--copy-metadata=transformers",
               "--copy-metadata=sentencepiece",
@@ -87,6 +89,8 @@ jobs:
               "--hidden-import=pystray._win32",
               "--hidden-import=PIL",
               "--hidden-import=PIL.Image",
+              "--hidden-import=tkinter",
+              "--hidden-import=tkinter.ttk",
               "--exclude-module=torch",
               "--exclude-module=torchvision",
               "--exclude-module=torchaudio",
@@ -129,7 +133,7 @@ jobs:
           if assets_src.exists():
               shutil.copytree(assets_src, portable_dir / "assets", dirs_exist_ok=True)
 
-          # 4. Copia modello int8 convertito
+          # 4. Copia modello int8 convertito in tutte le posizioni possibili
           models_src = backend_dir / "models"
           if models_src.exists():
               print("Integrazione modello INT8 nel pacchetto portabile...")
@@ -166,10 +170,13 @@ jobs:
                   if internal_dir.exists():
                       shutil.copy2(src, internal_dir / dll)
 
-          # 6. Crea script batch di avvio
+          # 6. Crea script batch di avvio con percorso modello esplicito
           bat_file = portable_dir / "AVVIA-LOCALTRANSLATE.bat"
           with open(bat_file, "w", encoding="utf-8") as f:
-              f.write("@echo off\ncd /d \"%~dp0\"\nstart \"\" \"%~dp0LocalTranslate.exe\"\n")
+              f.write("@echo off\n")
+              f.write("cd /d \"%~dp0\"\n")
+              f.write("set LOCALTRANSLATE_MODEL_PATH=%~dp0models\\nllb-200-distilled-600M-int8\n")
+              f.write("start \"\" \"%~dp0LocalTranslate.exe\"\n")
 
           print("Assemblaggio cartella portabile completato con successo!")
 
